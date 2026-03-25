@@ -70,20 +70,7 @@ Ordenar pelo maior valor total de documentos.
 
 
 Resposta --  
-SELECT 
-    c.Nome,
-    COUNT(DISTINCT d.DocId) AS QuantidadeDocumentos,
-    ISNULL(SUM(d.Valor), 0) AS ValorTotalDocumentos,
-    COUNT(o.OcorrenciaId) AS QuantidadeOcorrencias
-FROM Clientes c
-LEFT JOIN Documentos d ON c.ClienteId = d.ClienteId
-LEFT JOIN OcorrenciasEntrega o ON d.DocId = o.DocId
-GROUP BY 
-    c.ClienteId, 
-    c.Nome
-ORDER BY 
-    ValorTotalDocumentos DESC;
- 
+Script em anexo. 
 
 EXERCÍCIO 2 – PERFORMANCE 
 
@@ -94,13 +81,9 @@ Explicar: - quais índices foram criados - por que foram escolhidos
 Resposta -- 
 
 Para otimizar essa consulta específica, precisamos focar nas chaves estrangeiras (usadas nos JOINs) e nas colunas de agregação para evitar Key Lookups.
--- Índice 1: Para o JOIN entre Clientes e Documentos, cobrindo o Valor para o SUM
-CREATE NONCLUSTERED INDEX IX_Documentos_ClienteId 
-ON Documentos (ClienteId) INCLUDE (Valor);
 
--- Índice 2: Para o JOIN entre Documentos e OcorrenciasEntrega
-CREATE NONCLUSTERED INDEX IX_OcorrenciasEntrega_DocId 
-ON OcorrenciasEntrega (DocId);
+Scripts em anexo.
+
 Explicação --
 IX_Documentos_ClienteId: Escolhido porque a tabela Documentos é filtrada pelo ClienteId no JOIN. O INCLUDE (Valor) transforma este num índice coberto (Covering Index), permitindo que o SQL Server faça o SUM(Valor) diretamente pelo índice, sem precisar ler a tabela principal.
 
@@ -135,21 +118,7 @@ Resposta --
 
 A maneira mais segura de juntar a data com a hora em formato texto é extraindo a parte da data e somando com um TimeSpan.
 
-public class OcorrenciaEntrega 
-{ 
-    public int DocId { get; set; } 
-    public DateTime DataOcorrencia { get; set; } 
-    public string HoraOcorrencia { get; set; } 
-
-    public DateTime ObterDataHoraCompleta()
-    {
-        if (TimeSpan.TryParse(HoraOcorrencia, out TimeSpan horaFormatada))
-        {
-            return DataOcorrencia.Date.Add(horaFormatada);
-        }        
-        throw new FormatException("O formato da HoraOcorrencia é inválido.");
-    }
-}
+Scripts em anexo.
 
  
 
@@ -183,31 +152,7 @@ Resposta --
 
 A chave da NFe tem 44 posições fixas. Um simples Substring resolve de forma eficiente.
  
-public class ChaveNFeInfo
-{
-    public string UF { get; set; }
-    public string AnoMes { get; set; }
-    public string CNPJ { get; set; }
-    public string Modelo { get; set; }
-    public string Serie { get; set; }
-    public string Numero { get; set; }
-}
-
-public ChaveNFeInfo ParseChaveNFe(string chave)
-{
-    if (string.IsNullOrWhiteSpace(chave) || chave.Length != 44)
-        throw new ArgumentException("Chave NFe inválida. Deve conter 44 caracteres.");
-
-    return new ChaveNFeInfo
-    {
-        UF = chave.Substring(0, 2),
-        AnoMes = chave.Substring(2, 4),
-        CNPJ = chave.Substring(6, 14),
-        Modelo = chave.Substring(20, 2),
-        Serie = chave.Substring(22, 3),
-        Numero = chave.Substring(25, 9)
-    };
-}
+Scripts em anexo.
 
 ====================== PARTE 4 – INTEGRAÇÃO API CEP======================== 
 
@@ -225,50 +170,7 @@ Resposta --
 
 Usando as boas práticas modernas do .NET (evitando o erro do código de análise que veremos abaixo).
 
-using System.Net.Http;
-using System.Text.Json;
-using System.Threading.Tasks;
-
-public class Endereco
-{
-    public string Cep { get; set; }
-    public string Street { get; set; }
-    public string City { get; set; }
-    public string State { get; set; }
-}
-
-public class CepService
-{
-    private readonly HttpClient _httpClient;
-
-    // Idealmente, injetar via IHttpClientFactory no construtor
-    public CepService(HttpClient httpClient)
-    {
-        _httpClient = httpClient;
-    }
-
-    public async Task<Endereco> BuscarCepAsync(string cep)
-    {
-        try
-        {
-            var response = await _httpClient.GetAsync($"https://brasilapi.com.br/api/cep/v1/{cep}");
-            
-            if (!response.IsSuccessStatusCode)
-            {
-                // Tratar 404 ou outros erros específicos
-                return null; 
-            }
-
-            var json = await response.Content.ReadAsStringAsync();
-            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-            return JsonSerializer.Deserialize<Endereco>(json, options);
-        }
-        catch (HttpRequestException)
-        {
-            throw new Exception("Não foi possível conectar ao serviço de CEP no momento. Tente novamente mais tarde.");
-        }
-    }
-}
+Scripts em anexo.
 
 ======================== PARTE 5 – FRONTEND ======================== 
 
@@ -288,53 +190,7 @@ Resposta --
 
 Uma página simples em HTML com JavaScript puro (fetch API), bem leve para rodar no navegador.
 
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <title>Consulta CEP</title>
-</head>
-<body>
-    <h2>Buscar Endereço</h2>
-    <input type="text" id="cepInput" placeholder="Digite o CEP (só números)">
-    <button onclick="buscarCep()">Buscar</button>
-
-    <div id="resultado" style="margin-top: 20px;"></div>
-
-    <script>
-        async function buscarCep() {
-            const cep = document.getElementById('cepInput').value;
-            const divResultado = document.getElementById('resultado');
-            
-            if(!cep) {
-                divResultado.innerHTML = "Por favor, digite um CEP.";
-                return;
-            }
-
-            divResultado.innerHTML = "Buscando...";
-
-            try {
-                // Aqui você chamaria a sua API C# que criamos na Parte 4
-                // Exemplo simulado chamando direto a BrasilAPI para a prova:
-                const response = await fetch(`https://brasilapi.com.br/api/cep/v1/${cep}`);
-                
-                if (!response.ok) {
-                    throw new Error("CEP não encontrado ou erro na API.");
-                }
-
-                const data = await response.json();
-                divResultado.innerHTML = `
-                    <p><strong>Rua:</strong> ${data.street}</p>
-                    <p><strong>Cidade:</strong> ${data.city}</p>
-                    <p><strong>Estado:</strong> ${data.state}</p>
-                `;
-            } catch (error) {
-                divResultado.innerHTML = `<span style="color:red;">${error.message}</span>`;
-            }
-        }
-    </script>
-</body>
-</html>
+Scripts em anexo.
 
 ====================== PERGUNTAS DE ENTREVISTA======================== 
 
@@ -375,8 +231,11 @@ Pergunta final:
 Conte um bug difícil que você resolveu e como chegou à solução. 
 
 Resposta -- 
-
-
+No sistema atual, que lida com uma lógica complexa de gestão de documentos e processos administrativos, nós temos uma diversidade grande de perfis de acesso.
+Estávamos lidando com um bug recorrente e chato de estado na interface e nas regras de negócio durante as transições de status dos processos. O sistema estava tentando gerenciar permissões através do 'bloqueio de ação' nos botões dependendo do usuário logado e do momento do fluxo. Isso gerava falhas de validação, permitia cliques indevidos antes do bloqueio total e estava deixando o código cheio de ramificações complexas.
+Analisando o problema, vi que a abordagem de bloquear botões estava adicionando uma complexidade desnecessária. A solução racional que propus e implementei foi mudar a estratégia visual e de estado: em vez de usar o bloqueio de ação, decidi padronizar o controle através da visibilidade dos elementos.
+Ajustei a lógica para que, especificamente quando um processo entrava no status de necessário, os botões de ação que não pertenciam àquele contexto ou perfil simplesmente não fossem renderizados na tela.
+A grande vantagem dessa abordagem foi que conseguimos seguir o fluxo sem precisar fazer mudanças drásticas ou reescrever serviços inteiros. Mantivemos a lógica existente e central intacta, mas o bug de concorrência de cliques e estado desapareceu. O código ficou mais limpo e a experiência do usuário melhorou muito, já que eliminamos a frustração de tentar interagir com elementos visíveis, porém desabilitados.
 
 ================= ANÁLISE DE CÓDIGO (IDENTIFICAR ERROS)================== 
 Código C#:  
@@ -400,7 +259,6 @@ Deve ser estático ou injetado via IHttpClientFactory.
 
 Falta de tratamento de erro: Não há try/catch nem validação de response.IsSuccessStatusCode. 
 Se o CEP for inválido, vai gerar exceção não tratada.
-
  
 
 SQL:  
